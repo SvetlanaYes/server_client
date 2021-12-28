@@ -17,158 +17,165 @@
 
 
 #define SHSIZE 100
+#define BUFSIZE 100
+#define CLIENT_COUNT 10
 
-void *serve_client_1 (void *arg)
-{
-  int shmid;
-  key_t key;
-  char *shm_1;
-  
-  char *messages_from_server = "/tmp/messages_for_client1";
-  int fd_answers;
-  mkfifo(messages_from_server, 0666);
-  fd_answers = open(messages_from_server, O_RDWR);
-  
-  int fd;
-  char *registration = "/tmp/registration";
-  mkfifo(registration, 0666);
-  fd = open(registration, O_RDWR);
-  
-  key = 9874;
- 
-  shmid = shmget(key, SHSIZE, IPC_CREAT | 0666);
- 
-  if (shmid < 0)
-  {
-   perror("shmget");
-   exit(1);
-  }
- 
-  shm_1 = shmat(shmid, NULL, 0);
- 
-  if (shm_1 == (char *) -1)
-  {
-   perror("shmat");
-   exit(1);
-  }
-  memcpy(shm_1,"server is on",13);
-  int a;
-  while (*shm_1 != '*' )
-  { 
-   a = 1;
-   char buf[PATH_MAX];
-   read(fd,buf,PATH_MAX);
-   char *s;
-   if (!strcmp(shm_1,"1"))
-   { 
-     for (s = buf;*s != '\0';++s)
-     {
-       if (*s == '1')
+pthread_t client_threads[CLIENT_COUNT] = {0};
+
+
+void startup_server() {
+	key_t key = 5874;
+	int shmid = shmget(key, SHSIZE, IPC_CREAT | 0666);
+	if (shmid < 0) {
+		printf("Cannot shmget\n");
+		exit(1);
+	}
+
+	char* shm_r = shmat(shmid, NULL, 0);
+
+	 if (shm_r == (char *) -1) {
+	    perror("shmat");
+	    exit(1);
+	 }
+	 char up_message[] = "server is on";
+ 	 memcpy(shm_r, up_message, sizeof(up_message));	
+}
+
+
+void* client(void* args) {
+
+	char* child_pipe = (char*) args;
+	printf("In client function `%s`\n", child_pipe);
+	free(child_pipe);
+}
+
+
+int create_pipe() {
+	char *messages_from_server = "/tmp/registration";
+        mkfifo(messages_from_server, 0666);
+        int fd = open(messages_from_server, O_RDWR);
+	return fd;
+}
+
+void start_to_lisen() {
+        key_t key = 9874;
+	int shmid = shmget(key, SHSIZE, IPC_CREAT | 0666);
+	if (shmid < 0) {
+		printf("Cannot shmget\n");
+		exit(1);
+	}
+
+	char* shm = shmat(shmid, NULL, 0);
+
+	 if (shm == (char *) -1) {
+	 perror("shmat");
+	 exit(1);
+	 }
+	 
+	int fd = create_pipe();
+	int connected_client_count = 0;
+
+	char client_pid[BUFSIZE];
+	char buf[BUFSIZE];
+	int fd_child;
+	while(read(fd, client_pid, 5)) {
+	   
+	       if (connected_client_count < CLIENT_COUNT) {
+                       strcat(shm,client_pid);
+                       strcat(shm,"\n");
+			char* child_pipe = (char*)malloc(BUFSIZE);
+			sprintf(child_pipe, "/tmp/client_%s", client_pid); 
+			printf("%s\n",child_pipe);
+                       if (mkfifo(child_pipe,0666) == -1)
+                       {
+                         perror("mkfifo");
+                         exit(1);
+                       }
+                       fd_child = open(child_pipe,O_RDWR);
+                       write(fd,"hi",sizeof("hi"));
+			pthread_create(&client_threads[connected_client_count], NULL, 
+				       client, child_pipe);
+                        
+             	        pthread_join(client_threads[connected_client_count], NULL);
+                      read(fd, buf, BUFSIZE);
+		} else {
+			printf("Already registered\n");
+		}
+	}
+	
+}
+
+void* messages(void* args) {
+
+	char *messages = "/tmp/messages";
+	if (mkfifo(messages, 0666) == -1)
+	{
+	   unlink(messages);
+	}
+       if (mkfifo(messages, 0666) == -1)
+	{
+	   unlink(messages);
+	}
+        int fd = open(messages, O_RDWR);
+
+        char client_pid[BUFSIZE];
+	char buf[BUFSIZE];
+	write(fd,"start",sizeof("start"));
+	
+       while(read(fd,buf,5))
        {
-         a = 0;
+         printf("ed");
        }
-     }
-     if (a)
-     {
-        write(fd, "1",sizeof("1"));
-     }
-     else 
-     {
-       write(fd_answers,"YOU ARE ALREADY REGISTERED!",sizeof("YOU ARE ALREADY REGISTERED!"));
-     }
-     read(fd_answers,buf,PATH_MAX);
-     printf("%s\n",buf);
-     memcpy(shm_1,"/",1);
-   }
-   else if (!strcmp(shm_1,"2"))
-   {
-     fd = open(registration, O_RDONLY);
-     read(fd, buf,PATH_MAX);
-     printf("%s",buf);
-     *shm_1 = '/';
-   }
-   else if (*shm_1 == '3')
-   {
-     *shm_1 = '/';
-   }
-    
-  }
 
-  
 }
 
 
-void serve_client_2 ()
+
+
+
+void clean()
 {
- 
-  int shmid;
-  key_t key;
-  char *shm_2;
-  int fd;
-  char *registration = "/tmp/registration";
-  
-  mkfifo(registration, 0666);
-  fd = open(registration, O_RDWR);
-  key = 5874;
- 
-  shmid = shmget(key, SHSIZE, IPC_CREAT | 0666);
- 
-  if (shmid < 0)
-  {
-   perror("shmget");
-   exit(1);
-  }
- 
-  shm_2 = shmat(shmid, NULL, 0);
- 
-  if (shm_2 == (char *) -1)
-  {
-   perror("shmat");
-   exit(1);
-  }
-  memcpy(shm_2,"server is on",13);
-  int a;
-  while (*shm_2 != '*' )
-  { 
-   a = 1;
-   if (!strcmp(shm_2,"1"))
-   {
-     char buf[PATH_MAX];
-     char *s;
-     for (s = buf;*s != '\0';++s)
-     {
-       if (*s == '2')
-       {
-         a = 0;
-       }
-     }
-     if (a)
-     {
-        write(fd, "2",sizeof("1"));
-        read(fd, buf, PATH_MAX);
-        close(fd);
-     }
-     else 
-     {
-       
-       printf("YOU ARE ALREADY REGISTERED!\n");
-     }
-     memcpy(shm_2,"/",1);
-   }
+        key_t key = 5874;
+	int shmid = shmget(key, SHSIZE, IPC_CREAT | 0666);
+	if (shmid < 0) {
+		printf("Cannot shmget\n");
+		exit(1);
+	}
+
+	char* shm_r = shmat(shmid, NULL, 0);
+
+	 if (shm_r == (char *) -1) {
+	    perror("shmat");
+	    exit(1);
+	 }
+	key_t key1 = 9874;
+	int shmid1 = shmget(key1, SHSIZE, IPC_CREAT | 0666);
+	if (shmid1 < 0) {
+		printf("Cannot shmget\n");
+		exit(1);
+	}
+
+	char* shm = shmat(shmid1, NULL, 0);
+
+	 if (shm == (char *) -1) {
+	 perror("shmat");
+	 exit(1);
+	 }
+	 
+	 
+	 memcpy(shm_r,"",sizeof(""));
+	 memcpy(shm,"",sizeof(""));
 
 }
-}
+
+
 
 int main(int argc, char* argv[])
 {
- 
- char *s;
- char *messages_from_1_to_2;
- char *messages_from_2_to_1;
- 
- pthread_t mythread;
- pthread_create(&mythread, NULL,serve_client_1,NULL);
- serve_client_2();
- pthread_join(mythread, NULL);
-      
+        clean();
+	startup_server();
+	pthread_t mythread;
+        pthread_create(&mythread, NULL,messages,NULL);
+        start_to_lisen();
+        pthread_join(mythread, NULL);
 }
