@@ -14,16 +14,66 @@
 #include <fcntl.h>
 #include <sys/shm.h>
 #include <pthread.h>
+#include <stdbool.h>
 
 
 #define SHSIZE 100
 #define BUFSIZE 100
-#define CLIENT_COUNT 10
-
-pthread_t client_threads[CLIENT_COUNT] = {0};
+#define CLINET_COUNT 10
 
 
-void startup_server() {
+int connect_to_pipe() {
+        char *registration_pipe = "/tmp/registration";
+        mkfifo(registration_pipe, 0666);
+        int fd = open(registration_pipe, O_RDWR);
+        if (fd == -1) {
+                printf("Cannot open regisration pipe. error %s", strerror(errno));
+                exit(1);
+        }
+
+        return fd;
+}
+
+
+
+void registration() {
+
+        int pid = getpid();
+        int reg_fd = connect_to_pipe();
+
+
+        char pid_str[BUFSIZE];
+        sprintf(pid_str, "%d", pid);
+        write(reg_fd, pid_str, sizeof(pid_str));
+        printf("Client registered with pid %d\n", pid);
+
+}
+
+void get_clients()
+{
+
+      int pid = getpid();
+        int reg_fd = connect_to_pipe();
+
+        key_t key = 9874;
+	int shmid = shmget(key, SHSIZE, IPC_CREAT | 0666);
+	if (shmid < 0) {
+		printf("Cannot shmget\n");
+		exit(1);
+	}
+
+	char* shm = shmat(shmid, NULL, 0);
+
+	 if (shm == (char *) -1) {
+	 perror("shmat");
+	 exit(1);
+	 }
+	 printf("%s\n",shm);
+}
+
+
+bool is_Server_on() {
+
 	key_t key = 5874;
 	int shmid = shmget(key, SHSIZE, IPC_CREAT | 0666);
 	if (shmid < 0) {
@@ -37,27 +87,16 @@ void startup_server() {
 	    perror("shmat");
 	    exit(1);
 	 }
-	 char up_message[] = "server is on";
- 	 memcpy(shm_r, up_message, sizeof(up_message));	
+	 if (strncmp(shm_r,"server is on",12) != 0)
+         {
+           return 0;
+         } 
+         return 1;
 }
 
 
-void* client(void* args) {
-
-	char* child_pipe = (char*) args;
-	printf("In client function `%s`\n", child_pipe);
-	free(child_pipe);
-}
-
-
-int create_pipe() {
-	char *messages_from_server = "/tmp/registration";
-        mkfifo(messages_from_server, 0666);
-        int fd = open(messages_from_server, O_RDWR);
-	return fd;
-}
-
-void start_to_lisen() {
+void send_message(char* message,char* client_name)
+{
         key_t key = 9874;
 	int shmid = shmget(key, SHSIZE, IPC_CREAT | 0666);
 	if (shmid < 0) {
@@ -72,110 +111,50 @@ void start_to_lisen() {
 	 exit(1);
 	 }
 	 
-	int fd = create_pipe();
-	int connected_client_count = 0;
-
-	char client_pid[BUFSIZE];
-	char buf[BUFSIZE];
-	int fd_child;
-	while(read(fd, client_pid, 5)) {
-	   
-	       if (connected_client_count < CLIENT_COUNT) {
-                       strcat(shm,client_pid);
-                       strcat(shm,"\n");
-			char* child_pipe = (char*)malloc(BUFSIZE);
-			sprintf(child_pipe, "/tmp/client_%s", client_pid); 
-			printf("%s\n",child_pipe);
-                       if (mkfifo(child_pipe,0666) == -1)
-                       {
-                         perror("mkfifo");
-                         exit(1);
-                       }
-                       fd_child = open(child_pipe,O_RDWR);
-                       write(fd,"hi",sizeof("hi"));
-			pthread_create(&client_threads[connected_client_count], NULL, 
-				       client, child_pipe);
-                        
-             	        pthread_join(client_threads[connected_client_count], NULL);
-                      read(fd, buf, BUFSIZE);
-		} else {
-			printf("Already registered\n");
-		}
-	}
-	
-}
-
-void* messages(void* args) {
-
-	char *messages = "/tmp/messages";
-	if (mkfifo(messages, 0666) == -1)
-	{
-	   unlink(messages);
-	}
-       if (mkfifo(messages, 0666) == -1)
-	{
-	   unlink(messages);
-	}
+        char* ret;
+        ret =  strstr(shm, client_name);
+        if(!ret)
+        {
+         printf("No such client in server");
+         return;
+        }
+        
+        
+        char *messages = "/tmp/messages";
         int fd = open(messages, O_RDWR);
-
-        char client_pid[BUFSIZE];
-	char buf[BUFSIZE];
-	write(fd,"start",sizeof("start"));
-	
-       while(read(fd,buf,5))
-       {
-         printf("ed");
-       }
+        
+        write(fd,client_name,sizeof(client_name));
+        write(fd,message,sizeof(message));
 
 }
-
-
-
-
-
-void clean()
-{
-        key_t key = 5874;
-	int shmid = shmget(key, SHSIZE, IPC_CREAT | 0666);
-	if (shmid < 0) {
-		printf("Cannot shmget\n");
-		exit(1);
-	}
-
-	char* shm_r = shmat(shmid, NULL, 0);
-
-	 if (shm_r == (char *) -1) {
-	    perror("shmat");
-	    exit(1);
-	 }
-	key_t key1 = 9874;
-	int shmid1 = shmget(key1, SHSIZE, IPC_CREAT | 0666);
-	if (shmid1 < 0) {
-		printf("Cannot shmget\n");
-		exit(1);
-	}
-
-	char* shm = shmat(shmid1, NULL, 0);
-
-	 if (shm == (char *) -1) {
-	 perror("shmat");
-	 exit(1);
-	 }
-	 
-	 
-	 memcpy(shm_r,"",sizeof(""));
-	 memcpy(shm,"",sizeof(""));
-
-}
-
-
 
 int main(int argc, char* argv[])
-{
-        clean();
-	startup_server();
-	pthread_t mythread;
-        pthread_create(&mythread, NULL,messages,NULL);
-        start_to_lisen();
-        pthread_join(mythread, NULL);
+{ 
+       if (!is_Server_on())
+       {
+         fprintf(stderr, "Server is not on !");
+         exit(1);
+       }
+       registration(); 
+       
+       int cmd = 1;     
+       while(cmd)
+       {
+          printf (" Choose option\n 1 - <get_clients>\n 2 - <client_id> <message>\n 0 - EXIT");
+          scanf("%d",&cmd);
+          if (cmd == 1)
+          {
+            get_clients();
+          }
+          
+          if (cmd == 2)
+          {
+            char message[BUFSIZE];
+            char client_name[BUFSIZE];
+            scanf("%s",message);
+            scanf("%s",client_name);
+            send_message(message,client_name);
+          }
+       }
+
 }
